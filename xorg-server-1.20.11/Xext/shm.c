@@ -250,6 +250,13 @@ ShmDestroyPixmap(PixmapPtr pPixmap)
 {
     ScreenPtr pScreen;
 
+    /*
+     * During server shutdown (especially after CVE-2023-5574 fix which
+     * adjusted resource cleanup order), DestroyPixmap callbacks may be
+     * invoked with NULL pixmap pointers. Guard against this to prevent
+     * NULL pointer dereference crash. Return TRUE to indicate successful
+     * destruction per DestroyPixmap callback contract.
+     */
     if (!pPixmap)
         return TRUE;
 
