@@ -199,6 +199,7 @@ ShmCloseScreen(ScreenPtr pScreen)
     ShmScrPrivateRec *screen_priv = ShmGetScreenPriv(pScreen);
 
     pScreen->CloseScreen = screen_priv->CloseScreen;
+    /* destroyPixmap is only set when sharedPixmaps is enabled */
     if (screen_priv->destroyPixmap)
         pScreen->DestroyPixmap = screen_priv->destroyPixmap;
     dixSetPrivate(&pScreen->devPrivates, shmScrPrivateKey, NULL);
@@ -262,6 +263,7 @@ ShmDestroyPixmap(PixmapPtr pPixmap)
      * If screen_priv is NULL, the screen is being closed.
      * This should not happen since ShmCloseScreen restores DestroyPixmap,
      * but handle it gracefully to avoid crashes.
+     * This follows the same pattern as fbDestroyPixmap.
      */
     if (!screen_priv) {
         if (shmdesc)
