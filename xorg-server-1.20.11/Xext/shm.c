@@ -249,10 +249,10 @@ static Bool
 ShmDestroyPixmap(PixmapPtr pPixmap)
 {
     ScreenPtr pScreen;
-    
+
     if (!pPixmap)
         return TRUE;
-    
+
     pScreen = pPixmap->drawable.pScreen;
     ShmScrPrivateRec *screen_priv = ShmGetScreenPriv(pScreen);
     void *shmdesc = NULL;
