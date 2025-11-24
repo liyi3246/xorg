@@ -193,15 +193,39 @@ CheckForShmSyscall(void)
 
 #endif
 
+/* Safer ShmCloseScreen and ShmDestroyPixmap: restore callbacks, call upstream
+   CloseScreen while our private still exists, then remove/free private. */
+
 static Bool
 ShmCloseScreen(ScreenPtr pScreen)
 {
     ShmScrPrivateRec *screen_priv = ShmGetScreenPriv(pScreen);
+    Bool ret = TRUE;
 
-    pScreen->CloseScreen = screen_priv->CloseScreen;
+    if (!screen_priv) {
+        /* Nothing registered for this screen; just call current CloseScreen. */
+        return (*pScreen->CloseScreen) (pScreen);
+    }
+
+    /* Save pointers from our private before touching pScreen fields. */
+    CloseScreenProcPtr savedClose = screen_priv->CloseScreen;
+    DestroyPixmapProcPtr savedDestroy = screen_priv->destroyPixmap;
+
+    /* Restore the previous CloseScreen and DestroyPixmap so upstream cleanup
+       runs with the expected callbacks. Keep screen_priv intact until after
+       the upstream CloseScreen has run. */
+    pScreen->CloseScreen = savedClose;
+    if (savedDestroy)
+        pScreen->DestroyPixmap = savedDestroy;
+
+    /* Call the previous CloseScreen while our private still exists. */
+    ret = (*savedClose) (pScreen);
+
+    /* Now safe to remove and free our private. */
     dixSetPrivate(&pScreen->devPrivates, shmScrPrivateKey, NULL);
     free(screen_priv);
-    return (*pScreen->CloseScreen) (pScreen);
+
+    return ret;
 }
 
 static ShmScrPrivateRec *
@@ -248,21 +272,48 @@ ShmRegisterFuncs(ScreenPtr pScreen, ShmFuncsPtr funcs)
 static Bool
 ShmDestroyPixmap(PixmapPtr pPixmap)
 {
-    ScreenPtr pScreen = pPixmap->drawable.pScreen;
-    ShmScrPrivateRec *screen_priv = ShmGetScreenPriv(pScreen);
+    ScreenPtr pScreen;
+    ShmScrPrivateRec *screen_priv;
     void *shmdesc = NULL;
     Bool ret;
+
+    if (!pPixmap) {
+        ErrorF("ShmDestroyPixmap: pPixmap is NULL; returning FALSE\n");
+        return FALSE;
+    }
+
+    pScreen = pPixmap->drawable.pScreen;
+    screen_priv = ShmGetScreenPriv(pScreen);
+
+    /* If we don't have our per-screen private, fall back safely. */
+    if (!screen_priv) {
+        ErrorF("ShmDestroyPixmap: screen_priv is NULL for screen %p; falling back\n",
+               (void *)pScreen);
+        if (pScreen->DestroyPixmap && pScreen->DestroyPixmap != ShmDestroyPixmap)
+            return (*pScreen->DestroyPixmap) (pPixmap);
+        return FALSE;
+    }
 
     if (pPixmap->refcnt == 1)
         shmdesc = dixLookupPrivate(&pPixmap->devPrivates, shmPixmapPrivateKey);
 
+    /* If we don't have a saved original destroy function, fall back safely. */
+    if (!screen_priv->destroyPixmap) {
+        ErrorF("ShmDestroyPixmap: saved destroyPixmap is NULL for screen %p; falling back\n",
+               (void *)pScreen);
+        if (pScreen->DestroyPixmap && pScreen->DestroyPixmap != ShmDestroyPixmap)
+            return (*pScreen->DestroyPixmap) (pPixmap);
+        return FALSE;
+    }
+
+    /* Temporarily restore and call original DestroyPixmap, then re-install wrapper. */
     pScreen->DestroyPixmap = screen_priv->destroyPixmap;
     ret = (*pScreen->DestroyPixmap) (pPixmap);
     screen_priv->destroyPixmap = pScreen->DestroyPixmap;
     pScreen->DestroyPixmap = ShmDestroyPixmap;
 
     if (shmdesc)
-	ShmDetachSegment(shmdesc, 0);
+        ShmDetachSegment(shmdesc, 0);
 
     return ret;
 }
