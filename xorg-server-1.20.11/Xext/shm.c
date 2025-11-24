@@ -272,10 +272,18 @@ ShmRegisterFuncs(ScreenPtr pScreen, ShmFuncsPtr funcs)
 static Bool
 ShmDestroyPixmap(PixmapPtr pPixmap)
 {
-    ScreenPtr pScreen = pPixmap->drawable.pScreen;
-    ShmScrPrivateRec *screen_priv = ShmGetScreenPriv(pScreen);
+    ScreenPtr pScreen;
+    ShmScrPrivateRec *screen_priv;
     void *shmdesc = NULL;
     Bool ret;
+
+    if (!pPixmap) {
+        ErrorF("ShmDestroyPixmap: pPixmap is NULL; returning FALSE\n");
+        return FALSE;
+    }
+
+    pScreen = pPixmap->drawable.pScreen;
+    screen_priv = ShmGetScreenPriv(pScreen);
 
     /* If we don't have our per-screen private, fall back safely. */
     if (!screen_priv) {
