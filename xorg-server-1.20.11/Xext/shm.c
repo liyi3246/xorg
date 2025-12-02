@@ -251,11 +251,15 @@ ShmDestroyPixmap(PixmapPtr pPixmap)
     ScreenPtr pScreen;
 
     /*
-     * During server shutdown (especially after CVE-2023-5574 fix which
-     * adjusted resource cleanup order), DestroyPixmap callbacks may be
-     * invoked with NULL pixmap pointers. Guard against this to prevent
-     * NULL pointer dereference crash. Return TRUE to indicate successful
-     * destruction per DestroyPixmap callback contract.
+     * CVE-2023-5574 fix corrected the fb module's CloseScreen implementation,
+     * properly resetting the CloseScreen wrapper chain. This restored the
+     * correct calling sequence during screen shutdown. Previously, many
+     * CloseScreen and DestroyPixmap callbacks were not properly invoked,
+     * so NULL pointer checks were never needed. After the CVE fix, the proper
+     * call chain is restored, exposing a cleanup ordering issue: fbDestroyPixmap
+     * may destroy the last Pixmap, and the already-destroyed pPixmap can then
+     * be passed to ShmDestroyPixmap. Guard against NULL to prevent crash.
+     * Return TRUE to indicate successful destruction per callback contract.
      */
     if (!pPixmap)
         return TRUE;
