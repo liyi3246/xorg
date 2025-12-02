@@ -248,7 +248,23 @@ ShmRegisterFuncs(ScreenPtr pScreen, ShmFuncsPtr funcs)
 static Bool
 ShmDestroyPixmap(PixmapPtr pPixmap)
 {
-    ScreenPtr pScreen = pPixmap->drawable.pScreen;
+    ScreenPtr pScreen;
+
+    /*
+     * CVE-2023-5574 fix corrected the fb module's CloseScreen implementation,
+     * properly resetting the CloseScreen wrapper chain. This restored the
+     * correct calling sequence during screen shutdown. Previously, many
+     * CloseScreen and DestroyPixmap callbacks were not properly invoked,
+     * so NULL pointer checks were never needed. After the CVE fix, the proper
+     * call chain is restored, exposing a cleanup ordering issue: fbDestroyPixmap
+     * may destroy the last Pixmap, and the already-destroyed pPixmap can then
+     * be passed to ShmDestroyPixmap. Guard against NULL to prevent crash.
+     * Return TRUE to indicate successful destruction per callback contract.
+     */
+    if (!pPixmap)
+        return TRUE;
+
+    pScreen = pPixmap->drawable.pScreen;
     ShmScrPrivateRec *screen_priv = ShmGetScreenPriv(pScreen);
     void *shmdesc = NULL;
     Bool ret;
